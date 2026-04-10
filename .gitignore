@@ -1,0 +1,40 @@
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+
+# Python
+backend/venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Playwright CLI artifacts
+.playwright-cli/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+
+# misc
+.claude
+.agents
+.playwright 
+.docs
+.package.json
+.skills-lock.json
+
