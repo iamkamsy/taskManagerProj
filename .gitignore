@@ -2,10 +2,11 @@
 .env
 .env.local
 .env.*.local
+backend/.env
 
 # Python
 backend/venv/
-__pycache__/
+**/__pycache__/
 *.py[cod]
 *.pyo
 *.pyd
@@ -19,9 +20,14 @@ frontend/.vite/
 # Playwright CLI artifacts
 .playwright-cli/
 .playwright/
+backend/.playwright-cli/
 
-# Docs (local only)
-.docs/
+# Screenshots (Playwright test output at root)
+/*.png
+!frontend/public/*.png
+
+# Docs (internal only)
+docs/
 
 # Claude / skills tooling
 .claude/

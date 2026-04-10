@@ -3,7 +3,7 @@ import { useAuth } from "@/context/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { getTasks, createTask, deleteTask } from "@/api/tasks"
+import { getTasks, createTask, updateTask, deleteTask, SessionExpiredError } from "@/api/tasks"
 import type { Task } from "@/types/task"
 
 function sortByDeadline(tasks: Task[]): Task[] {
@@ -21,6 +21,13 @@ function formatDeadline(dateStr: string): string {
 
 const EMPTY_FORM = { name: "", deadline: "", description: "" }
 
+function isPastDate(dateStr: string): boolean {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const [year, month, day] = dateStr.split("-").map(Number)
+  return new Date(year, month - 1, day) < today
+}
+
 export default function TasksPage() {
   const { user, logout } = useAuth()
 
@@ -33,16 +40,32 @@ export default function TasksPage() {
   const [submitting, setSubmitting] = useState(false)
   const [showForm, setShowForm] = useState(false)
 
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState(EMPTY_FORM)
+  const [editError, setEditError] = useState("")
+  const [editSubmitting, setEditSubmitting] = useState(false)
+
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState("")
+
+  function handleApiError(err: unknown, setError: (msg: string) => void) {
+    if (err instanceof SessionExpiredError) {
+      logout()
+    } else {
+      setError(err instanceof Error ? err.message : "Something went wrong.")
+    }
+  }
 
   // Load tasks on mount
   useEffect(() => {
     getTasks()
       .then((data) => setTasks(sortByDeadline(data)))
-      .catch(() => setFetchError("Could not load tasks. Please refresh."))
+      .catch((err) => {
+        if (err instanceof SessionExpiredError) logout()
+        else setFetchError("Could not load tasks. Please refresh.")
+      })
       .finally(() => setLoading(false))
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleChange(
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -58,6 +81,10 @@ export default function TasksPage() {
       setFormError("All fields are required.")
       return
     }
+    if (isPastDate(deadline)) {
+      setFormError("Deadline cannot be in the past.")
+      return
+    }
     setSubmitting(true)
     setFormError("")
     try {
@@ -66,9 +93,53 @@ export default function TasksPage() {
       setForm(EMPTY_FORM)
       setShowForm(false)
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : "Something went wrong.")
+      handleApiError(err, setFormError)
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  function startEdit(task: Task) {
+    setEditingId(task.id)
+    setEditForm({ name: task.name, deadline: task.deadline, description: task.description })
+    setEditError("")
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setEditForm(EMPTY_FORM)
+    setEditError("")
+  }
+
+  function handleEditChange(
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) {
+    setEditForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
+    setEditError("")
+  }
+
+  async function handleUpdate(e: React.FormEvent, id: string) {
+    e.preventDefault()
+    const { name, deadline, description } = editForm
+    if (!name.trim() || !deadline || !description.trim()) {
+      setEditError("All fields are required.")
+      return
+    }
+    if (isPastDate(deadline)) {
+      setEditError("Deadline cannot be in the past.")
+      return
+    }
+    setEditSubmitting(true)
+    setEditError("")
+    try {
+      const updated = await updateTask(id, name.trim(), deadline, description.trim())
+      setTasks((prev) => sortByDeadline(prev.map((t) => (t.id === id ? updated : t))))
+      setEditingId(null)
+      setEditForm(EMPTY_FORM)
+    } catch (err: unknown) {
+      handleApiError(err, setEditError)
+    } finally {
+      setEditSubmitting(false)
     }
   }
 
@@ -78,8 +149,8 @@ export default function TasksPage() {
     try {
       await deleteTask(id)
       setTasks((prev) => prev.filter((t) => t.id !== id))
-    } catch {
-      setDeleteError("Could not delete that task. Please try again.")
+    } catch (err: unknown) {
+      handleApiError(err, setDeleteError)
     } finally {
       setDeletingId(null)
     }
@@ -127,7 +198,7 @@ export default function TasksPage() {
               />
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <Label htmlFor="deadline">Deadline</Label>
               <Input
                 id="deadline"
@@ -138,7 +209,7 @@ export default function TasksPage() {
               />
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <Label htmlFor="description">Description</Label>
               <textarea
                 id="description"
@@ -196,34 +267,102 @@ export default function TasksPage() {
 
         {!loading && tasks.length > 0 && (
           <ul className="space-y-3">
-            {tasks.map((task) => (
-              <li
-                key={task.id}
-                className="border border-border rounded-lg p-4 bg-card shadow-sm flex items-start justify-between gap-4"
-              >
-                <div className="min-w-0 flex-1 space-y-1">
-                  <p className="font-medium text-foreground line-clamp-2">
-                    {task.name}
-                  </p>
-                  <p className="text-xs font-medium text-primary">
-                    Due {formatDeadline(task.deadline)}
-                  </p>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                    {task.description}
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="shrink-0 self-start text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                  disabled={deletingId === task.id}
-                  onClick={() => handleDelete(task.id)}
-                  aria-label="Delete task"
+            {tasks.map((task) =>
+              editingId === task.id ? (
+                <li key={task.id} className="border border-border rounded-lg p-5 bg-card shadow-sm space-y-4">
+                  <h2 className="text-sm font-semibold text-foreground">Edit Task</h2>
+                  <form onSubmit={(e) => handleUpdate(e, task.id)} className="space-y-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`edit-name-${task.id}`}>Task name</Label>
+                      <Input
+                        id={`edit-name-${task.id}`}
+                        name="name"
+                        value={editForm.name}
+                        onChange={handleEditChange}
+                        autoFocus
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`edit-deadline-${task.id}`}>Deadline</Label>
+                      <Input
+                        id={`edit-deadline-${task.id}`}
+                        name="deadline"
+                        type="date"
+                        value={editForm.deadline}
+                        onChange={handleEditChange}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`edit-description-${task.id}`}>Description</Label>
+                      <textarea
+                        id={`edit-description-${task.id}`}
+                        name="description"
+                        value={editForm.description}
+                        onChange={handleEditChange}
+                        rows={3}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none transition-colors"
+                      />
+                    </div>
+
+                    {editError && (
+                      <p className="text-sm text-destructive">{editError}</p>
+                    )}
+
+                    <div className="flex gap-2 pt-1">
+                      <Button type="submit" disabled={editSubmitting} size="sm">
+                        {editSubmitting ? "Saving…" : "Save Changes"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={cancelEdit}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </form>
+                </li>
+              ) : (
+                <li
+                  key={task.id}
+                  className="border border-border rounded-lg p-4 bg-card shadow-sm flex items-start justify-between gap-4"
                 >
-                  {deletingId === task.id ? "…" : "×"}
-                </Button>
-              </li>
-            ))}
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="font-medium text-foreground line-clamp-2">
+                      {task.name}
+                    </p>
+                    <p className="text-xs font-medium text-primary">
+                      Due {formatDeadline(task.deadline)}
+                    </p>
+                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                      {task.description}
+                    </p>
+                  </div>
+                  <div className="shrink-0 self-start flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => startEdit(task)}
+                      aria-label="Edit task"
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={deletingId === task.id}
+                      onClick={() => handleDelete(task.id)}
+                      aria-label="Delete task"
+                    >
+                      {deletingId === task.id ? "Deleting…" : "Delete"}
+                    </Button>
+                  </div>
+                </li>
+              )
+            )}
           </ul>
         )}
       </main>

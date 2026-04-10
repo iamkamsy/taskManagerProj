@@ -14,8 +14,14 @@ def signup():
 
     if not username or not email or not password:
         return jsonify({"error": "All fields are required."}), 400
+    if len(username) > 50:
+        return jsonify({"error": "Username must be 50 characters or fewer."}), 400
+    if len(email) > 254:
+        return jsonify({"error": "Email address is too long."}), 400
     if len(password) < 6:
         return jsonify({"error": "Password must be at least 6 characters."}), 400
+    if len(password) > 128:
+        return jsonify({"error": "Password must be 128 characters or fewer."}), 400
 
     db = get_db()
     if db.users.find_one({"email": email}):
