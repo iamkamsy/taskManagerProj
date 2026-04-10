@@ -34,7 +34,9 @@ Thumbs.db
 .claude
 .agents
 .playwright 
-.docs
-.package.json
-.skills-lock.json
+.docs/
+package.json
+skills-lock.json
+package-lock.json
+.node_modules/
 
