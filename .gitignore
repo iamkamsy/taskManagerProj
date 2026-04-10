@@ -21,7 +21,7 @@ frontend/.vite/
 .playwright/
 
 # Docs (local only)
-docs/
+.docs/
 
 # Claude / skills tooling
 .claude/
