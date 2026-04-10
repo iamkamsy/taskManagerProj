@@ -18,6 +18,15 @@ frontend/.vite/
 
 # Playwright CLI artifacts
 .playwright-cli/
+.playwright/
+
+# Docs (local only)
+docs/
+
+# Claude / skills tooling
+.claude/
+.agents/
+skills-lock.json
 
 # OS
 .DS_Store
@@ -28,13 +37,3 @@ Thumbs.db
 .idea/
 *.suo
 *.user
-
-
-# misc
-.claude
-.agents
-.playwright 
-.docs
-.package.json
-.skills-lock.json
-
